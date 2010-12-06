@@ -1,0 +1,7 @@
+/**
+  * codecs that tend to output more bits than going in can be marked with this trait
+ **/
+
+trait ExpandingCodec{
+	def expansionRate:Double;
+}
