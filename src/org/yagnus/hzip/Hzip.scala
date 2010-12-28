@@ -1,16 +1,14 @@
 package org.yagnus.hzip;
 
-import org.yagnus.attic.Cmp;
 import org.yagnus.hzip.ThirdParty._;
 import org.yagnus.yadoop.Yadoop._;
+import org.yagnus.yadoop.Cmp;
 
 import org.apache.hadoop.fs._;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapred.JobClient;
 
 import scala.collection.mutable.{ HashSet, ArrayBuffer };
-
-
 
 object Hzip {
     def main(args : Array[String]) : Unit = {
@@ -40,15 +38,14 @@ object Hzip {
                 exit(2);
                 (bzip, Compress)
             }
+            case "unzip" ⇒ {
+                (zip, Decompress)
+            }
+
             case "zip" ⇒ {
                 println("Not implemented yet "+args(0));
                 exit(2);
                 (zip, Compress)
-            }
-            case "unzip" ⇒ {
-                println("Not implemented yet "+args(0));
-                exit(2);
-                (zip, Decompress)
             }
             case "cmp" ⇒ {
                 (null, Compare);
@@ -77,17 +74,20 @@ object Hzip {
         } else if (action == Decompress) {
             var todo : Option[HadoopCompressionAlgorithm] = None;
 
-            if (algo == gzip || algo == bzip) {
+            if (algo == gzip || algo == bzip || algo == zip) {
                 val gPaths = new ArrayBuffer[Path]();
                 val oFiles = new ArrayBuffer[String]();
 
                 val seen = new HashSet[String]();
                 for {
                     inFn ← args.drop(1)
-                    if inFn.endsWith(".gz")
-                    outFn = inFn.slice(0, inFn.length - 3)
+                    if (inFn.endsWith(".gz") || inFn.endsWith(".zip") || inFn.endsWith(".bz2"))
                     if !seen.contains(inFn)
                 } {
+
+                    var outFn : String = null;
+                    if (inFn.endsWith(".gz")) outFn = inFn.slice(0, inFn.length - 3)
+                    else outFn = inFn.slice(0, inFn.length - 4)
 
                     val inReady = fs.exists(inFn);
                     val outReady = !fs.exists(outFn);
@@ -100,13 +100,12 @@ object Hzip {
                 }
 
                 if (gPaths.length == 0) {
-                    println("There wasn't any file in the list that ended with .gz");
+                    println("There wasn't any file in the list that ended with the right extension");
                 }
                 //println("I've just decompressed '"+infile+"' using algorithm "+algo);
                 if (algo == gzip) {
                     todo = Some(new GzipDecompression(fs, gPaths, oFiles, tempDir));
-                } else {
-                    //algo==bzip
+                } else if (algo == bzip) {
                     todo = Some(new Bzip2Decompression(fs, gPaths, oFiles, tempDir));
 
                 }
@@ -148,3 +147,4 @@ object Hzip {
         val Compress, Decompress, Compare = Value;
     }
 }
+

@@ -16,7 +16,6 @@ package org.yagnus.hzip.codecs
  *
  *  the "encode" and "decode" that operate on Iterable's should not be overriden, but should be the method to use, since it is lazy.
  * 
- * @author hsb
  * 
  **/
 

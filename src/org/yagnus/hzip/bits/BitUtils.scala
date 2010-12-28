@@ -2,8 +2,7 @@ package org.yagnus.hzip.bits;
 
 /**
  * This object helps us to convert primitive multi-byte objects into bytes and back.
- *
- * @author hsb
+ * @author hc.busy
  *
  */
 object BitUtils {

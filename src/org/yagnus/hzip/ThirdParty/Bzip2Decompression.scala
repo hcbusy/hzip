@@ -1,5 +1,5 @@
 package org.yagnus.hzip.ThirdParty
-import org.yagnus.hzip.{ HadoopCompressionAlgorithm, CompressionJob, Common };
+import org.yagnus.hzip.{ FileNameDecompressionAlgorithm, FileNameDecompressionMapper, CompressionJob, Common };
 import org.yagnus.yadoop._;
 import org.yagnus.yadoop.Yadoop._;
 

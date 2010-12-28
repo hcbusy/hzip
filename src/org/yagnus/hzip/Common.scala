@@ -12,7 +12,7 @@ class CommonConfigs {
 
     def INPUT_FILE_SIZE = "input.file.size";
 
-    def currentVersion = "0.0.3";
+    def currentVersion = "0.0.2";
 
     def INTERNAL_JOBCONF_BATCH_SPEC = "org.yagnus.hzip.internal.batch.spec";
     def INTERNAL_JOBCONF_BATCH_TMP = "org.yagnus.hzip.internal.batch.tmp.path";
