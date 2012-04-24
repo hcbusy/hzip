@@ -1,150 +1,114 @@
 package org.yagnus.hzip;
+import scala.math.abs
+import scala.util.Random
 
-import org.yagnus.hzip.ThirdParty._;
-import org.yagnus.yadoop.Yadoop._;
-import org.yagnus.yadoop.Cmp;
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{ Path, FileSystem }
+import org.slf4j.LoggerFactory
+import org.yagnus.scalasupport.YReflections
+import org.yagnus.yadoop.Yadoop._
 
-import org.apache.hadoop.fs._;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.mapred.JobClient;
+object Hzip extends App {
+    println("Welcome to HZip, high quality compression for hadoop.(version " + AppConstants.LATEST_HZIP_APP_VERSION + ")");
 
-import scala.collection.mutable.{ HashSet, ArrayBuffer };
+    var debugLevel = 0;
 
-object Hzip {
-    def main(args : Array[String]) : Unit = {
+    val rnd = new Random();
 
-        val tempDir = "/tmp";
+    val fs: org.apache.hadoop.fs.FileSystem = org.apache.hadoop.fs.FileSystem.get(new Configuration(true));
 
-        import Actions._;
-        import Algos._;
-        println("Welcome to HZip, high quality compression for hadoop.(version "+Common.currentVersion+")");
+    var tmpDirName: String = null;
+    var tmpDir: Path = null;
+    //    val hadoopOpts = new GenericOptionsParser(args);
 
-        if (args.length < 1) {
-            println("Please enter the algorithm type.");
-            exit(1);
-        }
-        val (algo, action) = args(0) match {
-            case "gunzip" ⇒
-                (gzip, Decompress)
-            case "gzip" ⇒ {
-                println("Not implemented yet "+args(0));
-                exit(2);
-                (gzip, Compress)
+    /****Check mandatory inputs****/
+    if (args.length < 3) error("Please enter the operation, input and output.");
+    val op = args(0);
+    var input = args(1);
+    var output = args(2);
+    val spArgs: IndexedSeq[String] = if (args.length > 3) args.slice(3, args.length) else IndexedSeq();
+
+    //  val istat = ;
+    if (!fs.isFile(input) && !fs.getFileStatus(input).isDir) {
+        error("Input file " + input + " didn't exist.");
+    }
+    if (!output.endsWith("/")) output += "/";
+
+    val decompression = input.endsWith(".hz") || fs.isFile(input + "/" + AppConstants.HZIP_ARCHIVE_MARKER);
+
+    val conf = new Configuration();
+    conf.setStrings(RuntimeConstants.conf.TEMP_DIR, tmpDirName);
+    conf.setInt(RuntimeConstants.conf.DEBUG_LEVEL, debugLevel);
+
+    //to do set the logging level
+
+    do {
+        tmpDirName = AppConstants.TEMP_FILE_DIR_ROOT + abs(rnd.nextLong)
+        tmpDir = new Path(tmpDirName);
+    } while (!fs.mkdirs(tmpDir));
+
+    tmpDirName += "/";
+    //    debug("The tempdir is at " + tmpDirName);
+
+    try {
+
+        //get available algorithms
+        val algos = YReflections.getClasses("org.yagnus.hzip", "org\\.yagnus\\.hzip.*", classOf[CompressionAlgorithmFactory]);
+        println("Scanning found " + algos.size + " classes to check ");
+        //check to see if we have configurations for them.
+        val specdAlgo = algos.map((x: Class[CompressionAlgorithmFactory]) => {
+            val f = x.newInstance();
+            f.init(op, input, output, tmpDirName, conf, fs);
+            println("Checking " + f);
+            f.parseCommandline(spArgs);
+        }); //.flatten; hmm couldn't do this in 2.9.1
+
+        for (af <- specdAlgo.flatten) {
+
+            val curAlgo = if (decompression) {
+                println("Decompressing " + af.getDisplayName);
+                af.getDecompressionAlgorithm;
+            } else {
+                println("Compressing " + af.getDisplayName);
+                af.getCompressionAlgorithm;
             }
-            case "bunzip" ⇒
-                (bzip, Decompress)
-            case "bzip" ⇒ {
-                println("Not implemented yet "+args(0));
-                exit(2);
-                (bzip, Compress)
-            }
-            case "unzip" ⇒ {
-                (zip, Decompress)
-            }
-
-            case "zip" ⇒ {
-                println("Not implemented yet "+args(0));
-                exit(2);
-                (zip, Compress)
-            }
-            case "cmp" ⇒ {
-                (null, Compare);
-            }
-            case _ ⇒ {
-                println("Unknown compression library "+args(0));
-                exit(2);
-                (null, null);
-            }
-        }
-
-        val fs = FileSystem.get(new Configuration());
-
-        if (action == Compare) {
-            //Perform compression.
-
-            if (args.length != 3) {
-                println("Must specify two files to compare.");
-                usage();
-                exit(3);
-            }
-            println("Comparing files '"+args(1)+"' and '"+args(2)+"'");
-
-            exit(Cmp.diff(fs, args(1), args(2)));
-
-        } else if (action == Decompress) {
-            var todo : Option[HadoopCompressionAlgorithm] = None;
-
-            if (algo == gzip || algo == bzip || algo == zip) {
-                val gPaths = new ArrayBuffer[Path]();
-                val oFiles = new ArrayBuffer[String]();
-
-                val seen = new HashSet[String]();
-                for {
-                    inFn ← args.drop(1)
-                    if (inFn.endsWith(".gz") || inFn.endsWith(".zip") || inFn.endsWith(".bz2"))
-                    if !seen.contains(inFn)
-                } {
-
-                    var outFn : String = null;
-                    if (inFn.endsWith(".gz")) outFn = inFn.slice(0, inFn.length - 3)
-                    else outFn = inFn.slice(0, inFn.length - 4)
-
-                    val inReady = fs.exists(inFn);
-                    val outReady = !fs.exists(outFn);
-
-                    if (inReady && outReady) {
-                        gPaths.append(inFn);
-                        oFiles.append(outFn);
+            println("There are " + curAlgo.size + " hadoop jobs.");
+            for (cas <- curAlgo) {
+                cas.preHadoop;
+                val hjb = cas.getHadoop
+                if (hjb != null) {
+                    //JobClient.runJob(hconf);
+                    val result = hjb.waitForCompletion(true);
+                    if (!result) {
+                        println("Running job resulted in error. exiting.");
                     }
-                    seen.add(inFn);
-                }
-
-                if (gPaths.length == 0) {
-                    println("There wasn't any file in the list that ended with the right extension");
-                }
-                //println("I've just decompressed '"+infile+"' using algorithm "+algo);
-                if (algo == gzip) {
-                    todo = Some(new GzipDecompression(fs, gPaths, oFiles, tempDir));
-                } else if (algo == bzip) {
-                    todo = Some(new Bzip2Decompression(fs, gPaths, oFiles, tempDir));
 
                 }
+
+                if (!af.skipHzStamp) {
+                    hzStamp;
+                    println("\tFinishing up " + cas.getDisplayName);
+                }
+
+                cas.postHadoop;
             }
-
-            todo match {
-                case None ⇒
-                    println("There is nothing to do.");
-                    exit(6);
-                case Some(task) ⇒ {
-                    val taskDetail = task.createCompressionJob;
-                    println("Preparing...");
-                    taskDetail.preHadoop();
-                    println("Now running hadoop job...");
-                    JobClient.runJob(taskDetail.hadoopJob);
-                    println("Now finalizing comprsesion...");
-                    taskDetail.postHadoop();
-                    println("done.");
-                }
-            }
-
+        }
+        println("done.");
+    } finally {
+        if (debugLevel > 0) {
+        } else {
+            fs.delete(tmpDir, true);
         }
     }
-
-    def usage() {
-        println("TODO: type the usage instructions.");
-        println("gunzip, cmp");
-    }
-    def exit(code : Int) = {
-        usage();
-        System.exit(code);
+    def error(input: String*) {
+        println(input.reduceLeft((l, r) => l + r));
+        exit(-1);
     }
 
-    object Algos extends Enumeration {
-        val gzip, zip, bzip, hzip = Value;
-    }
+    def hzStamp() {
+        val mrkr = fs.create(output + AppConstants.HZIP_ARCHIVE_MARKER)
+        mrkr.write(0);
+        mrkr.close;
 
-    object Actions extends Enumeration {
-        val Compress, Decompress, Compare = Value;
     }
 }
-
